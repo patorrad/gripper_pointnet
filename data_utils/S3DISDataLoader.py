@@ -4,6 +4,89 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.data import Dataset
 
+class TOF_TRAIN_REALTIME(Dataset):
+    def __init__(self, num_point=4096, num_classes=6, block_size=1.0, sample_rate=1.0, transform=None):
+        super().__init__()
+        self.num_point = num_point
+        self.block_size = block_size
+        self.transform = transform
+        self.num_classes = num_classes
+
+        self.file = '/home/shaktis/Documents/Pointnet_Pointnet2_pytorch/data/tof/realtime_filter/move_full3.npy'
+        #'/home/shaktis/Documents/Pointnet_Pointnet2_pytorch/data/tof/realtime_old/tof_xyz_trial1.npy'
+        # '/home/shaktis/Documents/Pointnet_Pointnet2_pytorch/filtered_still_empty.npy'
+        # '/home/shaktis/Documents/Pointnet_Pointnet2_pytorch/data/tof/realtime/still_empty.npy'
+        
+        raw_data = np.load(self.file, allow_pickle=True)
+        points = raw_data[:, [0,1,2]]
+
+        print(len(points))
+   
+        self.cloud_points_list = []
+        self.cloud_coord_min, self.cloud_coord_max = [], []
+        num_point_all = []
+        labelweights = np.zeros(self.num_classes)
+
+        
+        self.cloud_points_list.append(points)
+
+        # tmp, _ = np.histogram(ep_labels, range(self.num_classes + 1))
+        # labelweights += tmp
+
+        #     sum_coords = np.sum(ep_points, axis = 1)
+
+        #     coord_min_ind, coord_max_ind = np.argmin(sum_coords), np.argmax(sum_coords)
+        #     self.cloud_coord_min.append(ep_points[coord_min_ind]), self.cloud_coord_max.append(ep_points[coord_max_ind])
+
+        #     num_point_all.append(len(ep_labels))
+
+        labelweights = labelweights.astype(np.float32)
+        labelweights = labelweights / np.sum(labelweights) 
+        self.labelweights = np.power(np.amax(labelweights) / labelweights, 1 / 3.0)
+        
+        print("Totally {} samples in set.".format(len(self.cloud_points_list)))
+
+    def __getitem__(self, idx):
+
+        # get points associated with episode
+        points = self.cloud_points_list[idx]
+        
+        N_points = len(points)  #TODO: FIGURE OUT WHAT THIS NUMBER SHOULD BE
+
+        while (True):
+            center = points[np.random.choice(N_points)] # generate random sample 
+            block_min = center - [self.block_size / 2.0, self.block_size / 2.0, 0]
+            block_max = center + [self.block_size / 2.0, self.block_size / 2.0, 0]
+            point_idxs = np.where((points[:, 0] >= block_min[0]) & (points[:, 0] <= block_max[0]) & (points[:, 1] >= block_min[1]) & (points[:, 1] <= block_max[1]))[0]
+            if point_idxs.size > 1024:
+                break
+
+        # randomly select batch from episode
+        if point_idxs.size >= self.num_point:
+            selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=False)
+        else:
+            selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=True)
+
+        # normalize
+        selected_points = points[selected_point_idxs, :] 
+        current_points = np.zeros((self.num_point, 3)) 
+
+        # current_points[:, 6] = selected_points[:, 0] / self.cloud_coord_max[idx][0]
+        # current_points[:, 7] = selected_points[:, 1] / self.cloud_coord_max[idx][1]
+        # current_points[:, 8] = selected_points[:, 2] / self.cloud_coord_max[idx][2]
+
+        selected_points[:, 0] = selected_points[:, 0] - center[0]
+        selected_points[:, 1] = selected_points[:, 1] - center[1]
+        
+        current_points = selected_points
+
+        if self.transform is not None:
+            current_points = self.transform(current_points)
+
+        return current_points
+
+    def __len__(self):
+        return len(self.cloud_points_list)
 
 class TOF_TRAIN(Dataset):
     def __init__(self, split='train', num_point=4096, num_classes=6, block_size=1.0, sample_rate=1.0, transform=None):
@@ -16,9 +99,10 @@ class TOF_TRAIN(Dataset):
 
         # load files with data
         if self.split == 'train':
-            self.file = '/home/shaktis/Documents/Pointnet_Pointnet2_pytorch/data/tof/17-11-07.npy'
+            self.file = '/home/shaktis/Documents/Pointnet_Pointnet2_pytorch/data/tof/noisy_train.npy'
+            #'/home/shaktis/Documents/Pointnet_Pointnet2_pytorch/data/tof/17-11-07.npy'
         else:
-            self.file = '/home/shaktis/Documents/Pointnet_Pointnet2_pytorch/data/tof/12-19-25.npy'
+            self.file = '/home/shaktis/Documents/Pointnet_Pointnet2_pytorch/data/tof/noisy_val.npy' #12-19-25.npy'
         
         raw_data = np.load(self.file, allow_pickle=True)
 

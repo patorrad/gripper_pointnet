@@ -118,6 +118,7 @@ def main(args):
                 pred_val = pred_val[0]
             
                 fout = open(os.path.join(visual_dir, f'move_full.obj'), 'w')
+                print(f"File out is {fout}")
 
                 for i in range(pred_val.shape[0]):
                     color = g_label2color[pred_val[i]]

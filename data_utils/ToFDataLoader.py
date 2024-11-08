@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pandas as pd
 
 from tqdm import tqdm
 from torch.utils.data import Dataset
@@ -293,3 +294,115 @@ class TOF_TRAIN(Dataset):
     
 #     def __len__(self):
 #         return len(self.cloud_points_list)
+
+
+import numpy as np
+import pandas as pd
+from torch.utils.data import Dataset
+
+class TOF_TRAIN_PT(Dataset):
+    def __init__(self, split='train', num_point=4096, num_classes=6, block_size=1.0, sample_rate=1.0, transform=None):
+        super().__init__()
+        self.num_point = num_point
+        self.block_size = block_size
+        self.transform = transform
+        self.split = split
+        self.num_classes = num_classes
+
+        # Load the dataset
+        path = '/home/shaktis/Documents/OmniIsaacGymUR16eEnv/omniisaacgymenvs/scripts/outputs/2024-10-30/17-32-20/dataset.pkl'
+        df = pd.read_pickle(path)
+
+        # Extract 'Hits_Pose' and 'Object_hit' columns
+        hit_poses = df.loc[:, 'Hits_Pose'].to_numpy()  # Expects arrays with shape (8, 64, 3)
+        objects_hit = df.loc[:, 'Object_hit'].to_numpy()  # Expects arrays of length 512
+
+        # Filter out entries with inconsistent shapes
+        corrected_hit_poses = []
+        corrected_objects_hit = []
+        for i, sub_array in enumerate(hit_poses):
+            if sub_array.shape == (8, 64, 3):
+                corrected_hit_poses.append(sub_array)
+                corrected_objects_hit.append(objects_hit[i])
+
+        # Stack and reshape arrays to required dimensions
+        corrected_hit_poses = np.stack(corrected_hit_poses).reshape(-1, 256, 3)
+        corrected_objects_hit = np.concatenate(corrected_objects_hit).reshape(-1, 256)
+
+        # Replace 6 with 5 across the entire array
+        corrected_objects_hit = np.where(corrected_objects_hit == 6, 5, corrected_objects_hit)
+
+        # Remove any entries that contain -1
+        # corrected_objects_hit = corrected_objects_hit[corrected_objects_hit >= 0]
+
+        # import pdb; pdb.set_trace()
+
+        # # TODO Need to understand why this was done
+        # corrected_objects_hit[(corrected_objects_hit ==6)] = 5 # ceiling should be class 5
+        # corrected_objects_hit = corrected_objects_hit[corrected_objects_hit >= 0] # get rid of -1's (did not hit objects or box)
+        
+        if np.any(corrected_objects_hit < 0) or np.any(corrected_objects_hit >= self.num_classes):
+            print("Warning: Labels contain values outside the valid class range.")
+
+        # Store the processed data in the class attributes
+        self.cloud_points_list = corrected_hit_poses
+        self.cloud_labels_list = corrected_objects_hit
+
+        # Calculate label weights
+        labelweights = np.zeros(self.num_classes)
+        for ep_labels in self.cloud_labels_list:
+            tmp, _ = np.histogram(ep_labels, range(self.num_classes + 1))
+            labelweights += tmp
+
+        # Normalize label weights
+        labelweights = labelweights.astype(np.float32)
+        labelweights = labelweights / np.sum(labelweights)
+        self.labelweights = np.power(np.amax(labelweights) / labelweights, 1 / 3.0)
+
+        print("Totally {} samples in {} set.".format(len(self.cloud_points_list), split))
+
+    def __getitem__(self, idx):
+        points = self.cloud_points_list[idx]
+        labels = self.cloud_labels_list[idx]
+        N_points = len(points)
+
+        # Attempt to find a valid block within a certain number of tries
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            center = points[np.random.choice(N_points)]  # Randomly select a center point
+            block_min = center - [self.block_size / 2.0, self.block_size / 2.0, 0]
+            block_max = center + [self.block_size / 2.0, self.block_size / 2.0, 0]
+            point_idxs = np.where(
+                (points[:, 0] >= block_min[0]) & (points[:, 0] <= block_max[0]) &
+                (points[:, 1] >= block_min[1]) & (points[:, 1] <= block_max[1])
+            )[0]
+
+            if point_idxs.size > 1024:
+                break
+        else:
+            # Fallback: if no valid block found, return a random sample
+            point_idxs = np.random.choice(N_points, self.num_point, replace=True)
+
+        # Sample or pad points to match `num_point`
+        if point_idxs.size >= self.num_point:
+            selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=False)
+        else:
+            selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=True)
+
+        # Normalize selected points
+        selected_points = points[selected_point_idxs, :].copy()
+        selected_points[:, 0] -= center[0]
+        selected_points[:, 1] -= center[1]
+
+        current_points = selected_points
+        current_labels = labels[selected_point_idxs]
+
+        # Apply transformation if provided
+        if self.transform is not None:
+            current_points, current_labels = self.transform(current_points, current_labels)
+
+        return current_points, current_labels
+
+    def __len__(self):
+        return len(self.cloud_points_list)
+

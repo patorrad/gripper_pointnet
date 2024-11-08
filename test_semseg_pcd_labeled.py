@@ -5,6 +5,7 @@ Date: Nov 2019
 import argparse
 import os
 from data_utils.S3DISDataLoader import TOF_TRAIN
+from data_utils.ToFDataLoader import TOF_TRAIN, TOF_TRAIN_PT
 from data_utils.indoor3d_util import g_label2color
 import torch
 import logging
@@ -37,7 +38,7 @@ def parse_args():
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device')
     parser.add_argument('--num_point', type=int, default=4096, help='point number [default: 4096]')
     parser.add_argument('--log_dir', type=str, required=True, help='experiment root')
-    parser.add_argument('--visual', action='store_true', default=True, help='visualize result [default: False]')
+    parser.add_argument('--visual', action='store_true', default=True, help='visualize result [default: True]')
     parser.add_argument('--test_area', type=int, default=5, help='area for testing, option: 1-6 [default: 5]')
     parser.add_argument('--num_votes', type=int, default=5, help='aggregate segmentation scores with voting [default: 5]')
     return parser.parse_args()
@@ -50,7 +51,7 @@ def main(args):
     '''HYPER PARAMETER'''
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     experiment_dir = 'log/sem_seg/' + args.log_dir
-    visual_dir = experiment_dir + '/visual/noisy_test'
+    visual_dir = experiment_dir + '/visual/pt'
     visual_dir = Path(visual_dir)
     visual_dir.mkdir(exist_ok=True)
 
@@ -71,7 +72,8 @@ def main(args):
     BATCH_SIZE = 1 
     NUM_POINT = args.num_point
 
-    TEST_DATASET = TOF_TRAIN(split="test",num_point=NUM_POINT, num_classes=NUM_CLASSES, block_size=1.0, sample_rate=1.0, transform=None)
+    # TEST_DATASET = TOF_TRAIN(split="test",num_point=NUM_POINT, num_classes=NUM_CLASSES, block_size=1.0, sample_rate=1.0, transform=None)
+    TEST_DATASET = TOF_TRAIN_PT(split="test",num_point=NUM_POINT, num_classes=NUM_CLASSES, block_size=1.0, sample_rate=1.0, transform=None)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=BATCH_SIZE, shuffle=False) 
 
     log_string("The number of test data is: %d" % len(TEST_DATASET))
@@ -128,12 +130,14 @@ def main(args):
 
             # VISUALIZATION CODE #
             if visual:
+                
                 pred_val = pred_val[0]
                 batch_label = batch_label[0]
             
                 fout = open(os.path.join(visual_dir, f'ep{i}_pred.obj'), 'w')
                 fout_gt = open(os.path.join(visual_dir, f'ep{i}__gt.obj'), 'w')
                 filename = os.path.join(visual_dir, f'ep{i}' + '.txt')
+                # import pdb; pdb.set_trace()
 
                 with open(filename, 'w') as pl_save:
                     for i in pred_val:

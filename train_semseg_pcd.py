@@ -4,7 +4,7 @@ Date: Nov 2019
 """
 import argparse
 import os
-from data_utils.ToFDataLoader import TOF_TRAIN
+from data_utils.ToFDataLoader import TOF_TRAIN, TOF_TRAIN_PT
 import torch
 import datetime
 import logging
@@ -101,11 +101,14 @@ def main(args):
     BATCH_SIZE = args.batch_size
 
     print("start loading training data ...")
-    TRAIN_DATASET = TOF_TRAIN(split='train', num_point=NUM_POINT, num_classes=NUM_CLASSES, block_size=1.0, sample_rate=1.0, transform=None)
+    TRAIN_DATASET = TOF_TRAIN_PT(split='train', num_point=NUM_POINT, num_classes=NUM_CLASSES, block_size=1.0, sample_rate=1.0, transform=None)
+
     print("start loading test data ...")
     TEST_DATASET = TOF_TRAIN(split='test', num_point=NUM_POINT, num_classes=NUM_CLASSES, block_size=1.0, sample_rate=1.0, transform=None)
 
     # pass data in batches
+    # import pdb; pdb.set_trace()
+    
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE, shuffle=False, num_workers=10,
                                                   pin_memory=True, drop_last=True,
                                                   worker_init_fn=lambda x: np.random.seed(x + int(time.time())))
@@ -196,6 +199,7 @@ def main(args):
         classifier = classifier.train()
 
         for i, (points, target) in tqdm(enumerate(trainDataLoader), total=len(trainDataLoader), smoothing=0.9): # target = label
+
             optimizer.zero_grad()
             points = points.data.numpy()
 
